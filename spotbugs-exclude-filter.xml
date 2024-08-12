@@ -1,0 +1,8 @@
+<FindBugsFilter>
+    <Match>
+        <!-- We store references we get from outside and we give stored references to the outside -->
+        <!-- EI: May expose internal representation by returning reference to mutable object -->
+        <!-- EI2: May expose internal representation by incorporating reference to mutable object -->
+        <Bug code="EI,EI2"/>
+    </Match>
+</FindBugsFilter>
