@@ -6,32 +6,37 @@
 
     <!-- Edit these to match your project -->
     <groupId>de.kneitzel</groupId>
-    <artifactId>javamavenapp</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <artifactId>SshAutoConnect</artifactId>
+    <version>1.1-SNAPSHOT</version>
 
     <packaging>jar</packaging>
 
     <!-- Modify or remove -->
     <organization>
-        <name>Java Forum</name>
+        <name>Konrad Neitzel</name>
     </organization>
 
     <!-- Properties of the project - Configuration is done here -->
     <properties>
 
         <!-- Application Properties -->
+		<debug.build>true</debug.build>
         <link.name>${project.artifactId}</link.name>
         <launcher>${project.artifactId}</launcher>
         <appName>${project.artifactId}</appName>
-        <main.class>de.kneitzel.JavaApp</main.class>
+        <main.class>de.kneitzel.SSHAutoConnect</main.class>
         <java.version>21</java.version>
         <jar.filename>${project.artifactId}-${project.version}</jar.filename>
 
         <!-- Dependency versions -->
+        <gson.version>2.8.9</gson.version>
         <jetbrains.annotations.version>24.1.0</jetbrains.annotations.version>
+        <jsch.version>0.1.55</jsch.version>
         <junit.version>5.10.2</junit.version>
+        <logback.version>1.5.6</logback.version>
         <lombok.version>1.18.34</lombok.version>
         <mockito.version>5.12.0</mockito.version>
+        <slf4j.version>2.0.9</slf4j.version>
         <spotbugs.version>4.8.6</spotbugs.version>
 
         <!-- Plugin dependencies -->
@@ -44,12 +49,12 @@
         <maven.enforcer.plugin>3.5.0</maven.enforcer.plugin>
         <maven.install.plugin>3.1.2</maven.install.plugin>
         <maven.jar.plugin>3.4.2</maven.jar.plugin>
-        <maven.javadoc.plugin>3.7.0</maven.javadoc.plugin>
+        <maven.javadoc.plugin>3.8.0</maven.javadoc.plugin>
         <maven.pmd.plugin>3.24.0</maven.pmd.plugin>
         <maven.project.info.reports.plugin>3.6.2</maven.project.info.reports.plugin>
         <maven.resources.plugin>3.3.1</maven.resources.plugin>
         <maven.shade.plugin>3.6.0</maven.shade.plugin>
-        <maven.site.plugin>4.0.0-M15</maven.site.plugin>
+        <maven.site.plugin>4.0.0-M16</maven.site.plugin>
         <maven.surfire.plugin>3.3.1</maven.surfire.plugin>
         <moditect.maven.plugin>1.0.0.RC2</moditect.maven.plugin>
         <native.maven.plugin>0.10.2</native.maven.plugin>
@@ -108,6 +113,30 @@
             <artifactId>annotations</artifactId>
             <version>${jetbrains.annotations.version}</version>
             <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jcraft</groupId>
+            <artifactId>jsch</artifactId>
+            <version>${jsch.version}</version>
+        </dependency>
+
+        <!-- SLF4J -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
         </dependency>
 
     </dependencies>
@@ -470,6 +499,7 @@
                             <mainclass>${main.class}</mainclass>
                             <input>${project.build.directory}/modules</input>
                             <mainjar>${jar.filename}.jar</mainjar>
+                            <winconsole>${debug.build}</winconsole>
                         </configuration>
                         <executions>
                             <execution>
@@ -517,7 +547,7 @@
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
                                         <Main-Class>${main.class}</Main-Class>
-                                        <Build-Version>1.0</Build-Version>
+                                        <Build-Version>${project.version}</Build-Version>
                                     </manifestEntries>
                                 </transformer>
                             </transformers>

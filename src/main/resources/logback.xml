@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Definition des Appenders, der die Log-Einträge in eine Datei schreibt -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <!-- Der Name der Logdatei -->
+        <file>SSHAutoConnect.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%date{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root-Logger Konfiguration -->
+    <root level="WARN">
+        <!-- Verknüpfen des FILE Appenders mit dem Root-Logger -->
+        <appender-ref ref="FILE" />
+    </root>
+
+</configuration>
