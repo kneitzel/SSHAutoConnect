@@ -3,285 +3,591 @@ package de.kneitzel;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
 
+/**
+ * GUI frame for configuring SSH connection parameters.
+ *
+ * This class provides a graphical user interface for editing
+ * SSH configurations. The dialog includes fields for all
+ * SSH parameters as well as a table for managing port mappings.
+ *
+ * @author Konrad Neitzel
+ * @version 1.1-SNAPSHOT
+ * @since 1.0
+ */
 @Slf4j
 public class SshConfigFrame extends JFrame {
 
-    private static final String APP_NAME = "SSHAutoConnect";
+    /** The SSH configuration to be edited */
+    private final SshConfig config;
 
-    private JTextField hostNameField;
-    private JTextField userNameField;
+    /** Callback function called when configuration changes */
+    private final Consumer<SshConfig> onConfigUpdated;
+
+    // UI Components
+    /** Input field for the configuration name */
+    private JTextField nameField;
+
+    /** Input field for the hostname */
+    private JTextField hostnameField;
+
+    /** Input field for the SSH port */
+    private JTextField portField;
+
+    /** Input field for the username */
+    private JTextField usernameField;
+
+    /** Password input field */
     private JPasswordField passwordField;
-    private JTextField xtermCommandField;
-    private JTextField uploadDirectoryField;
-    private DefaultListModel<PortMapping> portListModel;
-    private JList<PortMapping> portList;
-    private SshConfig sshConfig;
-    private JCheckBox autoConnectCheckBox;
-    private String appExecutable;
-    private Runnable recreateMenuAction;
-    private TrayIcon trayIcon;
 
-    public SshConfigFrame(SshConfig sshConfig, Runnable connectAction, Runnable recreateMenuAction,  String appExecutable, TrayIcon trayIcon) {
-        this.sshConfig = sshConfig;
-        this.appExecutable = appExecutable;
-        this.recreateMenuAction = recreateMenuAction;
-        this.trayIcon = trayIcon;
+    /** Input field for the path to the private key */
+    private JTextField privateKeyField;
 
-        setTitle("SSH Config Manager");
-        setSize(500, 350);
+    /** Input field for the terminal command */
+    private JTextField xtermField;
+
+    /** Input field for the upload directory */
+    private JTextField uploadDirField;
+
+    /** Checkbox for auto-connect at startup */
+    private JCheckBox autoConnectBox;
+
+    // Port Mappings Table
+    /** Table for port mappings */
+    private JTable portMappingsTable;
+
+    /** Table model for the port mappings table */
+    private DefaultTableModel tableModel;
+
+    /**
+     * Constructor for the SSH configuration dialog.
+     *
+     * Creates a new configuration dialog for the specified SSH configuration.
+     *
+     * @param config The SSH configuration to edit
+     * @param onConfigUpdated Callback function for configuration changes
+     */
+    public SshConfigFrame(SshConfig config, Consumer<SshConfig> onConfigUpdated) {
+        this.config = config;
+        this.onConfigUpdated = onConfigUpdated;
+
+        initializeUI();
+        loadConfigData();
+    }
+
+    /**
+     * Initializes the user interface of the configuration dialog.
+     *
+     * Creates all UI components, layout managers and event handlers.
+     * Builds the interface with configuration fields, port mappings table
+     * and action buttons.
+     */
+    private void initializeUI() {
+        setTitle("SSH Configuration - " + config.getName());
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        // UI Elemente
-        JPanel formPanel = new JPanel(new GridLayout(6, 2));
-        hostNameField = new JTextField();
-        userNameField = new JTextField();
-        passwordField = new JPasswordField();
-        xtermCommandField = new JTextField();
-        autoConnectCheckBox = new JCheckBox();
-        uploadDirectoryField = new JTextField();
+        // Main panel with scroll pane
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        JScrollPane scrollPane = new JScrollPane(mainPanel);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        add(scrollPane, BorderLayout.CENTER);
 
-        formPanel.add(new JLabel("Hostname:"));
-        formPanel.add(hostNameField);
-        formPanel.add(new JLabel("Username:"));
-        formPanel.add(userNameField);
-        formPanel.add(new JLabel("Password:"));
-        formPanel.add(passwordField);
-        formPanel.add(new JLabel("XtermCommand:"));
-        formPanel.add(xtermCommandField);
-        formPanel.add(new JLabel("Upload Directory:"));
-        formPanel.add(uploadDirectoryField);
-        formPanel.add(new JLabel("Auto Connect:"));
-        formPanel.add(autoConnectCheckBox);
+        // Top panel for basic configuration
+        JPanel configPanel = createConfigPanel();
+        mainPanel.add(configPanel, BorderLayout.NORTH);
 
-        // Port-Mapping Liste
-        portListModel = new DefaultListModel<>();
-        portList = new JList<>(portListModel);
-        portList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // Center panel for port mappings
+        JPanel portPanel = createPortMappingsPanel();
+        mainPanel.add(portPanel, BorderLayout.CENTER);
 
-        portList.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent evt) {
-                if (evt.getClickCount() == 2) { // Doppelklick
-                    //int index = portList.locationToIndex(evt.getPoint());
-                    editPortMapping();
-                }
-            }
-        });
+        // Bottom panel for buttons
+        JPanel buttonPanel = createButtonPanel();
+        add(buttonPanel, BorderLayout.SOUTH);
 
-        JScrollPane listScrollPane = new JScrollPane(portList);
+        pack();
+        setLocationRelativeTo(null);
+    }
 
-        // Buttons für Port-Mapping Verwaltung
-        JPanel buttonPanel = new JPanel(new GridLayout(2, 1));
-        JButton addButton = new JButton("+");
-        JButton removeButton = new JButton("-");
-        JButton editButton = new JButton("Edit");
-        buttonPanel.add(addButton);
-        buttonPanel.add(removeButton);
-        buttonPanel.add(editButton);
+    /**
+     * Creates the panel for basic SSH configuration.
+     *
+     * Builds a panel with all input fields for SSH parameters:
+     * Name, hostname, port, username, password, private key, etc.
+     *
+     * @return JPanel with configuration fields
+     */
+    private JPanel createConfigPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(new TitledBorder("SSH Configuration"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
 
-        // Save und Connect Buttons
-        JPanel actionPanel = new JPanel();
+        // Name
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(new JLabel("Name:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        nameField = new JTextField(20);
+        panel.add(nameField, gbc);
+
+        // Hostname
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Hostname:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        hostnameField = new JTextField(20);
+        panel.add(hostnameField, gbc);
+
+        // Port
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Port:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        portField = new JTextField("22", 20);
+        panel.add(portField, gbc);
+
+        // Username
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Username:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        usernameField = new JTextField(20);
+        panel.add(usernameField, gbc);
+
+        // Password
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Password:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        passwordField = new JPasswordField(20);
+        panel.add(passwordField, gbc);
+
+        // Private Key Path
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Private Key:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        JPanel keyPanel = new JPanel(new BorderLayout());
+        privateKeyField = new JTextField(20);
+        JButton browseButton = new JButton("Browse");
+        browseButton.addActionListener(e -> browsePrivateKey());
+        keyPanel.add(privateKeyField, BorderLayout.CENTER);
+        keyPanel.add(browseButton, BorderLayout.EAST);
+        panel.add(keyPanel, gbc);
+
+        // XTerm Command
+        gbc.gridx = 0;
+        gbc.gridy = 6;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        panel.add(new JLabel("XTerm Command:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        xtermField = new JTextField("xterm", 20);
+        panel.add(xtermField, gbc);
+
+        // Upload Directory
+        gbc.gridx = 0;
+        gbc.gridy = 7;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        panel.add(new JLabel("Upload Directory:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        uploadDirField = new JTextField("/tmp/", 20);
+        panel.add(uploadDirField, gbc);
+
+        // Auto Connect
+        gbc.gridx = 0;
+        gbc.gridy = 8;
+        gbc.gridwidth = 2;
+        autoConnectBox = new JCheckBox("Auto Connect on startup");
+        panel.add(autoConnectBox, gbc);
+
+        return panel;
+    }
+
+    /**
+     * Creates the panel for port mappings management.
+     *
+     * Builds a panel with a table for port mappings and
+     * management buttons (Add, Edit, Remove).
+     *
+     * @return JPanel with port mappings table and buttons
+     */
+    private JPanel createPortMappingsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new TitledBorder("Port Mappings"));
+
+        // Table for port mappings
+        String[] columnNames = {"Local Port", "Remote Port", "Start Command", "Stop Command"};
+        tableModel = new DefaultTableModel(columnNames, 0);
+        portMappingsTable = new JTable(tableModel);
+        portMappingsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+        JScrollPane tableScrollPane = new JScrollPane(portMappingsTable);
+        tableScrollPane.setPreferredSize(new Dimension(600, 200));
+        panel.add(tableScrollPane, BorderLayout.CENTER);
+
+        // Buttons for port mapping management
+        JPanel mappingButtonPanel = new JPanel(new FlowLayout());
+        JButton addMappingButton = new JButton("Add");
+        JButton editMappingButton = new JButton("Edit");
+        JButton removeMappingButton = new JButton("Remove");
+
+        addMappingButton.addActionListener(e -> addPortMapping());
+        editMappingButton.addActionListener(e -> editPortMapping());
+        removeMappingButton.addActionListener(e -> removePortMapping());
+
+        mappingButtonPanel.add(addMappingButton);
+        mappingButtonPanel.add(editMappingButton);
+        mappingButtonPanel.add(removeMappingButton);
+
+        panel.add(mappingButtonPanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    /**
+     * Creates the panel with the main action buttons.
+     *
+     * Creates Save and Cancel buttons for the dialog.
+     *
+     * @return JPanel with action buttons
+     */
+    private JPanel createButtonPanel() {
+        JPanel panel = new JPanel(new FlowLayout());
+
         JButton saveButton = new JButton("Save");
-        JButton connectButton = new JButton("Connect");
-        if (appExecutable != null) {
-            JButton autoStartButton = new JButton("Switch Auto Start");
-            actionPanel.add(autoStartButton);
-            autoStartButton.addActionListener(this::switchAutoStart);
-        }
+        JButton cancelButton = new JButton("Cancel");
 
-        actionPanel.add(saveButton);
-        actionPanel.add(connectButton);
+        saveButton.addActionListener(e -> saveConfiguration());
+        cancelButton.addActionListener(e -> dispose());
 
-        add(formPanel, BorderLayout.NORTH);
-        add(listScrollPane, BorderLayout.CENTER);
-        add(buttonPanel, BorderLayout.EAST);
-        add(actionPanel, BorderLayout.SOUTH);
+        panel.add(saveButton);
+        panel.add(cancelButton);
 
-        // Laden der Konfigurationsdaten
-        loadConfig();
-
-        addButton.addActionListener(e -> addPortMapping());
-        removeButton.addActionListener(e -> removeSelectedPortMapping());
-        editButton.addActionListener(e -> editPortMapping());
-        saveButton.addActionListener(e -> saveConfig());
-        connectButton.addActionListener(e -> connectAction.run());
+        return panel;
     }
 
-    private void switchAutoStart(ActionEvent actionEvent) {
-        boolean isAutoStart = checkAutoStartKey();
-        if (isAutoStart) {
-            removeAutoStart();
-        } else {
-            addAutoStart();
+    /**
+     * Loads configuration data into the UI fields.
+     *
+     * Populates all input fields and the port mappings table
+     * with values from the SSH configuration.
+     */
+    private void loadConfigData() {
+        nameField.setText(config.getName());
+        hostnameField.setText(config.getHostname());
+        portField.setText(String.valueOf(config.getPort()));
+        usernameField.setText(config.getUsername());
+        passwordField.setText(config.getPassword());
+        privateKeyField.setText(config.getPrivateKeyPath());
+        xtermField.setText(config.getXtermCommand());
+        uploadDirField.setText(config.getUploadDirectory());
+        autoConnectBox.setSelected(config.isAutoConnect());
+
+        // Load port mappings
+        tableModel.setRowCount(0);
+        for (PortMapping mapping : config.getPortMappings()) {
+            tableModel.addRow(new Object[]{
+                    mapping.getLocalPort(),
+                    mapping.getRemotePort(),
+                    mapping.getStartCommand(),
+                    mapping.getStopCommand()
+            });
         }
     }
 
-    private void addAutoStart() {
-        String command = "reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v " + APP_NAME + " /t REG_SZ /d \"" + appExecutable + "\" /f";
-        log.atInfo()
-                .addKeyValue("command", command)
-                .log("Adding Autostart Key");
+    /**
+     * Saves the configuration from the UI fields.
+     *
+     * Validates inputs, transfers values to the SSH configuration
+     * and calls the onConfigUpdated callback.
+     */
+    private void saveConfiguration() {
         try {
-            Process process = Runtime.getRuntime().exec(command);
-            process.waitFor();
-            trayIcon.displayMessage("SSH AutoConnect", "Autostart Key hinzugefügt.", TrayIcon.MessageType.INFO);
-        } catch (InterruptedException | IOException e) {
-            log.atInfo()
-                    .addKeyValue("name", APP_NAME)
-                    .addKeyValue("executable", appExecutable)
-                    .addKeyValue("command", command)
-                    .setCause(e)
-                    .log("Unable to add Autostart Key");
-        }
-    }
+            config.setName(nameField.getText().trim());
+            config.setHostname(hostnameField.getText().trim());
+            config.setPort(Integer.parseInt(portField.getText().trim()));
+            config.setUsername(usernameField.getText().trim());
+            config.setPassword(new String(passwordField.getPassword()));
+            config.setPrivateKeyPath(privateKeyField.getText().trim());
+            config.setXtermCommand(xtermField.getText().trim());
+            config.setUploadDirectory(uploadDirField.getText().trim());
+            config.setAutoConnect(autoConnectBox.isSelected());
 
-    private void removeAutoStart() {
-        log.info("Removing Autostart Key");
-        String command = "reg delete HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v " + APP_NAME + " /f";
-        try {
-            Process process = Runtime.getRuntime().exec(command);
-            process.waitFor();
+            // Save port mappings
+            List<PortMapping> mappings = new ArrayList<>();
+            for (int i = 0; i < tableModel.getRowCount(); i++) {
+                int localPort = (Integer) tableModel.getValueAt(i, 0);
+                int remotePort = (Integer) tableModel.getValueAt(i, 1);
+                String startCommand = (String) tableModel.getValueAt(i, 2);
+                String stopCommand = (String) tableModel.getValueAt(i, 3);
 
-            if (process.exitValue() == 0) {
-                log.atInfo()
-                        .addKeyValue("name", APP_NAME)
-                        .addKeyValue("executable", appExecutable)
-                        .addKeyValue("command", command)
-                        .log("Removed Autostart Key");
-                trayIcon.displayMessage("SSH AutoConnect", "Autostart Key entfernt.", TrayIcon.MessageType.INFO);
-            } else {
-                log.atInfo()
-                        .addKeyValue("name", APP_NAME)
-                        .addKeyValue("executable", appExecutable)
-                        .addKeyValue("command", command)
-                        .addKeyValue("exitValue", process.exitValue())
-                        .log("Unable to remove Autostart Key");
+                mappings.add(new PortMapping(localPort, remotePort,
+                        startCommand != null ? startCommand : "",
+                        stopCommand != null ? stopCommand : ""));
             }
-        } catch (IOException | InterruptedException e) {
-            log.atInfo()
-                    .addKeyValue("name", APP_NAME)
-                    .addKeyValue("executable", appExecutable)
-                    .addKeyValue("command", command)
-                    .setCause(e)
-                    .log("Unable to remove Autostart Key");
+            config.setPortMappings(mappings);
+
+            onConfigUpdated.accept(config);
+            dispose();
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Ungültige Portnummer!", "Fehler", JOptionPane.ERROR_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Fehler beim Speichern: " + e.getMessage(), "Fehler", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private boolean checkAutoStartKey() {
+    /**
+     * Opens a file dialog for selecting a private SSH key.
+     *
+     * Shows a FileChooser dialog and sets the selected
+     * file path in the private key field.
+     */
+    private void browsePrivateKey() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        fileChooser.setDialogTitle("Private Key auswählen");
 
-        String command = "reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v " + APP_NAME;
-        try {
-            Process process = Runtime.getRuntime().exec(command);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.contains(APP_NAME)) {
-                    return true;
-                }
-            }
-            process.waitFor();
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-        }
-        return false;
-    }
-
-    private void loadConfig() {
-        hostNameField.setText(sshConfig.getHostName());
-        userNameField.setText(sshConfig.getUserName());
-        xtermCommandField.setText(sshConfig.getXtermCommand());
-        uploadDirectoryField.setText(sshConfig.getUploadDirectory());
-        autoConnectCheckBox.setSelected(sshConfig.isAutoConnect());
-        // Passwort wird nicht angezeigt, Feld bleibt leer
-        for (PortMapping mapping : sshConfig.getPortMappings()) {
-            portListModel.addElement(mapping);
+        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            privateKeyField.setText(fileChooser.getSelectedFile().getAbsolutePath());
         }
     }
 
-    private void saveConfig() {
-        sshConfig.setHostName(hostNameField.getText());
-        sshConfig.setUserName(userNameField.getText());
-        sshConfig.setXtermCommand(xtermCommandField.getText());
-        sshConfig.setAutoConnect(autoConnectCheckBox.isSelected());
-        sshConfig.setUploadDirectory(uploadDirectoryField.getText());
-        if (passwordField.getPassword().length > 0) {
-            sshConfig.setPassword(new String(passwordField.getPassword()));
-        }
-        sshConfig.getPortMappings().clear();
-        for (int i = 0; i < portListModel.size(); i++) {
-            sshConfig.getPortMappings().add(portListModel.getElementAt(i));
-        }
-
-        try {
-            sshConfig.saveToFile();
-            recreateMenuAction.run();
-            JOptionPane.showMessageDialog(this, "Konfiguration erfolgreich gespeichert.", "Information", JOptionPane.INFORMATION_MESSAGE);
-        } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "Fehler beim Speichern der Konfiguration: " + e.getMessage(), "Fehler", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void editPortMapping() {
-        int selectedIndex = portList.getSelectedIndex();
-        if (selectedIndex != -1) {
-            PortMapping mapping = portListModel.getElementAt(selectedIndex);
-            showPortMapping(mapping, "Edit Port Mapping");
-        } else {
-            JOptionPane.showMessageDialog(this, "Bitte wählen Sie ein Port-Mapping aus, das editiert werden soll.", "Fehler", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
+    /**
+     * Adds a new port mapping to the table.
+     *
+     * Opens a dialog for entering a new port mapping
+     * and adds it to the table upon successful input.
+     */
     private void addPortMapping() {
-        PortMapping mapping = new PortMapping(5900, 5900, "startCommand", "stopCommand");
-        showPortMapping(mapping, "Add Port Mapping");
-        portListModel.addElement(mapping);
-    }
+        PortMappingDialog dialog = new PortMappingDialog(this, null);
+        dialog.setVisible(true);
 
-    private void showPortMapping(PortMapping mapping, String title) {
-        JTextField localPortField = new JTextField();
-        JTextField remotePortField = new JTextField();
-        JTextField startCommandField = new JTextField();
-        JTextField stopCommandField = new JTextField();
-        JPanel panel = new JPanel(new GridLayout(4, 2));
-        panel.add(new JLabel("Local Port:"));
-        panel.add(localPortField);
-        panel.add(new JLabel("Remote Port:"));
-        panel.add(remotePortField);
-        panel.add(new JLabel("Start Command:"));
-        panel.add(startCommandField);
-        panel.add(new JLabel("Stop Command:"));
-        panel.add(stopCommandField);
-
-        localPortField.setText(String.valueOf(mapping.getLocalPort()));
-        remotePortField.setText(String.valueOf(mapping.getRemotePort()));
-        startCommandField.setText(mapping.getStartCommand());
-        stopCommandField.setText(mapping.getStopCommand());
-
-        int result = JOptionPane.showConfirmDialog(this, panel, title, JOptionPane.OK_CANCEL_OPTION);
-        if (result == JOptionPane.OK_OPTION) {
-            try {
-                mapping.setLocalPort(Integer.parseInt(localPortField.getText().trim()));
-                mapping.setRemotePort(Integer.parseInt(remotePortField.getText().trim()));
-                mapping.setStartCommand(startCommandField.getText().trim());
-                mapping.setStopCommand(stopCommandField.getText().trim());
-            } catch (NumberFormatException e) {
-                JOptionPane.showMessageDialog(this, "Bitte gültige Portnummern eingeben.", "Fehler", JOptionPane.ERROR_MESSAGE);
-            }
+        PortMapping mapping = dialog.getPortMapping();
+        if (mapping != null) {
+            tableModel.addRow(new Object[]{
+                    mapping.getLocalPort(),
+                    mapping.getRemotePort(),
+                    mapping.getStartCommand(),
+                    mapping.getStopCommand()
+            });
         }
     }
 
-    private void removeSelectedPortMapping() {
-        int selectedIndex = portList.getSelectedIndex();
-        if (selectedIndex != -1) {
-            portListModel.remove(selectedIndex);
+    /**
+     * Edits the selected port mapping.
+     *
+     * Opens a dialog for editing the port mapping
+     * selected in the table.
+     */
+    private void editPortMapping() {
+        int selectedRow = portMappingsTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            PortMapping currentMapping = new PortMapping(
+                    (Integer) tableModel.getValueAt(selectedRow, 0),
+                    (Integer) tableModel.getValueAt(selectedRow, 1),
+                    (String) tableModel.getValueAt(selectedRow, 2),
+                    (String) tableModel.getValueAt(selectedRow, 3)
+            );
+
+            PortMappingDialog dialog = new PortMappingDialog(this, currentMapping);
+            dialog.setVisible(true);
+
+            PortMapping mapping = dialog.getPortMapping();
+            if (mapping != null) {
+                tableModel.setValueAt(mapping.getLocalPort(), selectedRow, 0);
+                tableModel.setValueAt(mapping.getRemotePort(), selectedRow, 1);
+                tableModel.setValueAt(mapping.getStartCommand(), selectedRow, 2);
+                tableModel.setValueAt(mapping.getStopCommand(), selectedRow, 3);
+            }
         } else {
-            JOptionPane.showMessageDialog(this, "Bitte wählen Sie ein Port-Mapping aus, das entfernt werden soll.", "Fehler", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Bitte wählen Sie eine Port-Weiterleitung aus!", "Hinweis", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /**
+     * Removes the selected port mapping from the table.
+     *
+     * Deletes the selected row in the table or shows a
+     * message if no row is selected.
+     */
+    private void removePortMapping() {
+        int selectedRow = portMappingsTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            tableModel.removeRow(selectedRow);
+        } else {
+            JOptionPane.showMessageDialog(this, "Bitte wählen Sie eine Port-Weiterleitung aus!", "Hinweis", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /**
+     * Inner class for the port mapping editing dialog.
+     *
+     * Modal dialog for entering or editing port mapping parameters.
+     */
+    private static class PortMappingDialog extends JDialog {
+        /** Input field for the local port */
+        private JTextField localPortField;
+        /** Input field for the remote port */
+        private JTextField remotePortField;
+        /** Input field for the start command */
+        private JTextField startCommandField;
+        /** Input field for the stop command */
+        private JTextField stopCommandField;
+        /** Result of the dialog */
+        private PortMapping result;
+
+        /**
+         * Constructor for the port mapping dialog.
+         *
+         * @param parent Parent frame for the modal dialog
+         * @param mapping Port mapping to edit or null for new mapping
+         */
+        public PortMappingDialog(Frame parent, PortMapping mapping) {
+            super(parent, "Port Mapping", true);
+            initializeUI();
+
+            if (mapping != null) {
+                localPortField.setText(String.valueOf(mapping.getLocalPort()));
+                remotePortField.setText(String.valueOf(mapping.getRemotePort()));
+                startCommandField.setText(mapping.getStartCommand());
+                stopCommandField.setText(mapping.getStopCommand());
+            }
+
+            pack();
+            setLocationRelativeTo(parent);
+        }
+
+        /**
+         * Initializes the UI of the port mapping dialog.
+         *
+         * Creates all input fields and buttons for the dialog.
+         */
+        private void initializeUI() {
+            setLayout(new GridBagLayout());
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(5, 5, 5, 5);
+            gbc.anchor = GridBagConstraints.WEST;
+
+            // Local Port
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            add(new JLabel("Local Port:"), gbc);
+            gbc.gridx = 1;
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+            gbc.weightx = 1.0;
+            localPortField = new JTextField(10);
+            add(localPortField, gbc);
+
+            // Remote Port
+            gbc.gridx = 0;
+            gbc.gridy = 1;
+            gbc.fill = GridBagConstraints.NONE;
+            gbc.weightx = 0;
+            add(new JLabel("Remote Port:"), gbc);
+            gbc.gridx = 1;
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+            gbc.weightx = 1.0;
+            remotePortField = new JTextField(10);
+            add(remotePortField, gbc);
+
+            // Start Command
+            gbc.gridx = 0;
+            gbc.gridy = 2;
+            gbc.fill = GridBagConstraints.NONE;
+            gbc.weightx = 0;
+            add(new JLabel("Start Command:"), gbc);
+            gbc.gridx = 1;
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+            gbc.weightx = 1.0;
+            startCommandField = new JTextField(20);
+            add(startCommandField, gbc);
+
+            // Stop Command
+            gbc.gridx = 0;
+            gbc.gridy = 3;
+            gbc.fill = GridBagConstraints.NONE;
+            gbc.weightx = 0;
+            add(new JLabel("Stop Command:"), gbc);
+            gbc.gridx = 1;
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+            gbc.weightx = 1.0;
+            stopCommandField = new JTextField(20);
+            add(stopCommandField, gbc);
+
+            // Buttons
+            JPanel buttonPanel = new JPanel(new FlowLayout());
+            JButton okButton = new JButton("OK");
+            JButton cancelButton = new JButton("Cancel");
+
+            okButton.addActionListener(e -> {
+                try {
+                    int localPort = Integer.parseInt(localPortField.getText().trim());
+                    int remotePort = Integer.parseInt(remotePortField.getText().trim());
+                    String startCommand = startCommandField.getText().trim();
+                    String stopCommand = stopCommandField.getText().trim();
+
+                    result = new PortMapping(localPort, remotePort, startCommand, stopCommand);
+                    dispose();
+                } catch (NumberFormatException ex) {
+                    JOptionPane.showMessageDialog(this, "Ungültige Portnummer!", "Fehler", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+
+            cancelButton.addActionListener(e -> dispose());
+
+            buttonPanel.add(okButton);
+            buttonPanel.add(cancelButton);
+
+            gbc.gridx = 0;
+            gbc.gridy = 4;
+            gbc.gridwidth = 2;
+            add(buttonPanel, gbc);
+        }
+
+        /**
+         * Returns the created or edited port mapping.
+         *
+         * @return Port mapping or null if dialog was canceled
+         */
+        public PortMapping getPortMapping() {
+            return result;
         }
     }
 }

@@ -1,117 +1,260 @@
 package de.kneitzel;
 
-import com.jcraft.jsch.*;
+import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.Session;
+import com.jcraft.jsch.SftpProgressMonitor;
+import lombok.extern.slf4j.Slf4j;
+
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.util.Vector;
+import java.io.File;
 import java.util.function.Supplier;
 
+/**
+ * GUI frame for downloading files via SFTP.
+ * <p>
+ * This class provides a graphical user interface for downloading
+ * files over an existing SSH connection. The dialog includes
+ * remote file path input, local target selection, and progress display.
+ *
+ * @author Konrad Neitzel
+ * @version 1.1-SNAPSHOT
+ * @since 1.0
+ */
+@Slf4j
 public class DownloadFrame extends JFrame {
 
-    private static final String title = "Remote File Browser";
-    private Supplier<Session> sessionSupplier;
-    private String currentDirectory;
-    private JList<String> fileList;
-    private DefaultListModel<String> listModel;
+    /**
+     * Supplier for the SSH session
+     */
+    private final Supplier<Session> sessionSupplier;
 
-    public DownloadFrame(Supplier<Session> sessionSupplier, String initialDirectory) {
+    /**
+     * Default remote directory for downloads
+     */
+    private final String remoteDirectory;
+
+    /**
+     * Input field for the remote file
+     */
+    private JTextField remoteFileField;
+
+    /**
+     * Input field for the local target path
+     */
+    private JTextField localFileField;
+
+    /**
+     * Progress bar for download progress
+     */
+    private JProgressBar progressBar;
+
+    /**
+     * Log area for status messages
+     */
+    private JTextArea logArea;
+
+    /**
+     * Constructor for the download frame.
+     *
+     * @param sessionSupplier Supplier for the SSH session
+     * @param remoteDirectory Default directory on the remote server
+     */
+    public DownloadFrame(Supplier<Session> sessionSupplier, String remoteDirectory) {
         this.sessionSupplier = sessionSupplier;
-        this.currentDirectory = initialDirectory;
-        this.listModel = new DefaultListModel<>();
+        this.remoteDirectory = remoteDirectory;
 
-        setTitle(title);
-        setSize(400, 300);
+        initializeUI();
+    }
+
+    /**
+     * Initializes the user interface of the download dialog.
+     * <p>
+     * Creates all UI components for remote file path input,
+     * local target selection, progress display, and log output.
+     */
+    private void initializeUI() {
+        setTitle("File Download");
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setLayout(new BorderLayout());
 
-        fileList = new JList<>(listModel);
-        fileList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        loadDirectoryContents(currentDirectory);
+        // Main panel
+        JPanel mainPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
 
-        fileList.addMouseListener(new MouseAdapter() {
+        // Remote file path
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        mainPanel.add(new JLabel("Remote File:"), gbc);
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        remoteFileField = new JTextField(remoteDirectory, 30);
+        mainPanel.add(remoteFileField, gbc);
+
+        // Local file selection
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        mainPanel.add(new JLabel("Local Path:"), gbc);
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        localFileField = new JTextField(30);
+        mainPanel.add(localFileField, gbc);
+
+        gbc.gridx = 2;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        JButton browseButton = new JButton("Browse");
+        browseButton.addActionListener(e -> browseLocalPath());
+        mainPanel.add(browseButton, gbc);
+
+        // Progress bar
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 3;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
+        mainPanel.add(progressBar, gbc);
+
+        add(mainPanel, BorderLayout.NORTH);
+
+        // Log area
+        logArea = new JTextArea(10, 50);
+        logArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(logArea);
+        add(scrollPane, BorderLayout.CENTER);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        JButton downloadButton = new JButton("Download");
+        JButton closeButton = new JButton("Close");
+
+        downloadButton.addActionListener(e -> downloadFile());
+        closeButton.addActionListener(e -> dispose());
+
+        buttonPanel.add(downloadButton);
+        buttonPanel.add(closeButton);
+        add(buttonPanel, BorderLayout.SOUTH);
+
+        pack();
+        setLocationRelativeTo(null);
+    }
+
+    /**
+     * Opens a file dialog to select the local target directory.
+     * <p>
+     * Displays a file chooser for files and directories and
+     * sets the selected path in the local path field.
+     */
+    private void browseLocalPath() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+
+        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+            localFileField.setText(selectedFile.getAbsolutePath());
+        }
+    }
+
+    /**
+     * Starts the download process for the specified remote file.
+     * <p>
+     * Validates the input, establishes an SFTP connection, and
+     * starts the download in a background thread with progress monitoring.
+     */
+    private void downloadFile() {
+        String remotePath = remoteFileField.getText().trim();
+        String localPath = localFileField.getText().trim();
+
+        if (remotePath.isEmpty() || localPath.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Bitte geben Sie sowohl entfernten als auch lokalen Pfad an!",
+                    "Fehler", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Download in background thread
+        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
             @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    int index = fileList.locationToIndex(e.getPoint());
-                    String selectedItem = listModel.getElementAt(index);
-                    handleDoubleClick(selectedItem);
-                }
-            }
-        });
-
-        add(new JScrollPane(fileList), BorderLayout.CENTER);
-        setVisible(true);
-    }
-
-    private void loadDirectoryContents(String directory) {
-        listModel.clear();
-
-        try {
-            ChannelSftp sftpChannel = (ChannelSftp) sessionSupplier.get().openChannel("sftp");
-            sftpChannel.connect();
-
-            Vector<ChannelSftp.LsEntry> files = sftpChannel.ls(directory);
-
-            for (ChannelSftp.LsEntry entry : files) {
-                listModel.addElement(entry.getFilename());
-            }
-
-            sftpChannel.disconnect();
-
-            setTitle(title + ": " + directory);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void handleDoubleClick(String selectedItem) {
-        if (selectedItem.equals("..")) {
-            currentDirectory = currentDirectory.substring(0, currentDirectory.lastIndexOf('/'));
-            if (currentDirectory.isEmpty()) {
-                currentDirectory = "/";
-            }
-        } else {
-            try {
-                ChannelSftp sftpChannel = (ChannelSftp) sessionSupplier.get().openChannel("sftp");
-                sftpChannel.connect();
-
-                String path = currentDirectory + "/" + selectedItem;
-                SftpATTRS attrs = sftpChannel.stat(path);
-
-                if (attrs.isDir()) {
-                    // Wechsle in das Verzeichnis
-                    currentDirectory = path;
-                } else {
-                    // Lade die Datei herunter
-                    downloadFile(sftpChannel, path);
+            protected Void doInBackground() throws Exception {
+                Session session = sessionSupplier.get();
+                if (session == null || !session.isConnected()) {
+                    publish("Fehler: Keine SSH-Verbindung verfügbar!");
+                    return null;
                 }
 
-                sftpChannel.disconnect();
-            } catch (Exception e) {
-                e.printStackTrace();
+                try {
+                    ChannelSftp sftpChannel = (ChannelSftp) session.openChannel("sftp");
+                    sftpChannel.connect();
+
+                    publish("Starte Download: " + remotePath);
+
+                    // Progress monitor
+                    SftpProgressMonitor monitor = new SftpProgressMonitor() {
+                        private long transferred = 0;
+
+                        private long total = 0;
+
+                        @Override
+                        public void init(int op, String src, String dest, long max) {
+                            total = max;
+                            SwingUtilities.invokeLater(() -> {
+                                progressBar.setValue(0);
+                                progressBar.setString("0%");
+                            });
+                        }
+
+                        @Override
+                        public boolean count(long count) {
+                            transferred += count;
+                            if (total > 0) {
+                                int percent = (int) ((transferred * 100) / total);
+                                SwingUtilities.invokeLater(() -> {
+                                    progressBar.setValue(percent);
+                                    progressBar.setString(percent + "%");
+                                });
+                            }
+                            return true;
+                        }
+
+                        @Override
+                        public void end() {
+                            SwingUtilities.invokeLater(() -> {
+                                progressBar.setValue(100);
+                                progressBar.setString("100%");
+                            });
+                        }
+                    };
+
+                    sftpChannel.get(remotePath, localPath, monitor, ChannelSftp.OVERWRITE);
+                    sftpChannel.disconnect();
+
+                    publish("Download erfolgreich abgeschlossen!");
+
+                } catch (Exception e) {
+                    publish("Fehler beim Download: " + e.getMessage());
+                    log.error("Download failed", e);
+                }
+
+                return null;
             }
-        }
 
-        loadDirectoryContents(currentDirectory);
-    }
-
-    private void downloadFile(ChannelSftp sftpChannel, String remoteFilePath) {
-        try (InputStream inputStream = sftpChannel.get(remoteFilePath);
-             FileOutputStream outputStream = new FileOutputStream(remoteFilePath.substring(remoteFilePath.lastIndexOf('/') + 1))) {
-
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                for (String message : chunks) {
+                    logArea.append(message + "\n");
+                    logArea.setCaretPosition(logArea.getDocument().getLength());
+                }
             }
+        };
 
-            JOptionPane.showMessageDialog(this, "Datei " + remoteFilePath + " erfolgreich heruntergeladen.");
-        } catch (Exception e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Fehler beim Herunterladen der Datei: " + e.getMessage(), "Fehler", JOptionPane.ERROR_MESSAGE);
-        }
+        worker.execute();
     }
 }

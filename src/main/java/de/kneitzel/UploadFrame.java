@@ -1,117 +1,270 @@
 package de.kneitzel;
-import com.jcraft.jsch.*;
+
+import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.Session;
+import com.jcraft.jsch.SftpProgressMonitor;
+import lombok.extern.slf4j.Slf4j;
+
 import javax.swing.*;
 import java.awt.*;
-import java.awt.dnd.*;
-import java.awt.datatransfer.*;
 import java.io.File;
-import java.io.FileInputStream;
-import java.util.List;
 import java.util.function.Supplier;
 
+/**
+ * GUI frame for uploading files via SFTP.
+ * <p>
+ * This class provides a graphical user interface for uploading
+ * files over an existing SSH connection. The dialog includes
+ * file selection, target directory configuration, and progress display.
+ *
+ * @author Konrad Neitzel
+ * @version 1.1-SNAPSHOT
+ * @since 1.0
+ */
+@Slf4j
 public class UploadFrame extends JFrame {
 
-    private JLabel label;
-    private JButton button;
-    private Supplier<Session> sessionSupplier;
-    private String remoteDirectory;
+    /**
+     * Supplier for the SSH session
+     */
+    private final Supplier<Session> sessionSupplier;
 
-    public UploadFrame(Supplier<Session> session, String remoteDirectory) {
-        this.sessionSupplier = session;
+    /**
+     * Default remote directory for uploads
+     */
+    private final String remoteDirectory;
+
+    /**
+     * Input field for the local file
+     */
+    private JTextField localFileField;
+
+    /**
+     * Input field for the remote path
+     */
+    private JTextField remoteFileField;
+
+    /**
+     * Progress bar for upload progress
+     */
+    private JProgressBar progressBar;
+
+    /**
+     * Log area for status messages
+     */
+    private JTextArea logArea;
+
+    /**
+     * Constructor for the upload frame.
+     *
+     * @param sessionSupplier Supplier for the SSH session
+     * @param remoteDirectory Default directory on the remote server
+     */
+    public UploadFrame(Supplier<Session> sessionSupplier, String remoteDirectory) {
+        this.sessionSupplier = sessionSupplier;
         this.remoteDirectory = remoteDirectory;
 
-        setTitle("Datei-Upload");
-        setSize(400, 200);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setLocationRelativeTo(null);
+        initializeUI();
+    }
 
+    /**
+     * Initializes the user interface of the upload dialog.
+     * <p>
+     * Creates all UI components for file selection, target configuration,
+     * progress display, and log output.
+     */
+    private void initializeUI() {
+        setTitle("File Upload");
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        label = new JLabel("Ziehen Sie eine Datei hierher oder wählen Sie eine Datei", SwingConstants.CENTER);
-        add(label, BorderLayout.CENTER);
+        // Main panel
+        JPanel mainPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
 
-        button = new JButton("Datei auswählen");
-        add(button, BorderLayout.SOUTH);
+        // Local file selection
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        mainPanel.add(new JLabel("Local File:"), gbc);
 
-        // Datei-Upload bei Auswahl über den Button
-        button.addActionListener(e -> selectAndUploadFile());
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        localFileField = new JTextField(30);
+        mainPanel.add(localFileField, gbc);
 
-        // Drag & Drop Funktionalität hinzufügen
-        new DropTarget(label, new DropTargetListener() {
+        gbc.gridx = 2;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        JButton browseButton = new JButton("Browse");
+        browseButton.addActionListener(e -> browseLocalFile());
+        mainPanel.add(browseButton, gbc);
+
+        // Remote file path
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        mainPanel.add(new JLabel("Remote Path:"), gbc);
+
+        gbc.gridx = 1;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        remoteFileField = new JTextField(remoteDirectory, 30);
+        mainPanel.add(remoteFileField, gbc);
+
+        // Progress bar
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 3;
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
+        mainPanel.add(progressBar, gbc);
+
+        add(mainPanel, BorderLayout.NORTH);
+
+        // Log area
+        logArea = new JTextArea(10, 50);
+        logArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(logArea);
+        add(scrollPane, BorderLayout.CENTER);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        JButton uploadButton = new JButton("Upload");
+        JButton closeButton = new JButton("Close");
+
+        uploadButton.addActionListener(e -> uploadFile());
+        closeButton.addActionListener(e -> dispose());
+
+        buttonPanel.add(uploadButton);
+        buttonPanel.add(closeButton);
+        add(buttonPanel, BorderLayout.SOUTH);
+
+        pack();
+        setLocationRelativeTo(null);
+    }
+
+    /**
+     * Opens a file dialog to select the file to be uploaded.
+     * <p>
+     * Displays a file chooser and sets the selected file path
+     * in the local file field. Also automatically updates the
+     * remote path if it is just a directory.
+     */
+    private void browseLocalFile() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+
+        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+            localFileField.setText(selectedFile.getAbsolutePath());
+
+            // Set remote filename to local filename if remote path is just directory
+            String remotePath = remoteFileField.getText();
+            if (remotePath.endsWith("/")) {
+                remoteFileField.setText(remotePath + selectedFile.getName());
+            }
+        }
+    }
+
+    /**
+     * Starts the upload process for the selected file.
+     * <p>
+     * Validates the input, establishes an SFTP connection, and
+     * starts the upload in a background thread with progress monitoring.
+     */
+    private void uploadFile() {
+        String localPath = localFileField.getText().trim();
+        String remotePath = remoteFileField.getText().trim();
+
+        if (localPath.isEmpty() || remotePath.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Bitte geben Sie sowohl lokalen als auch entfernten Pfad an!",
+                    "Fehler", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        File localFile = new File(localPath);
+        if (!localFile.exists() || !localFile.isFile()) {
+            JOptionPane.showMessageDialog(this, "Lokale Datei existiert nicht!",
+                    "Fehler", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Upload in background thread
+        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
             @Override
-            public void dragEnter(DropTargetDragEvent dtde) {}
+            protected Void doInBackground() throws Exception {
+                Session session = sessionSupplier.get();
+                if (session == null || !session.isConnected()) {
+                    publish("Fehler: Keine SSH-Verbindung verfügbar!");
+                    return null;
+                }
 
-            @Override
-            public void dragOver(DropTargetDragEvent dtde) {}
-
-            @Override
-            public void dropActionChanged(DropTargetDragEvent dtde) {}
-
-            @Override
-            public void dragExit(DropTargetEvent dte) {}
-
-            @Override
-            public void drop(DropTargetDropEvent dtde) {
                 try {
-                    dtde.acceptDrop(DnDConstants.ACTION_COPY);
-                    Transferable transferable = dtde.getTransferable();
+                    ChannelSftp sftpChannel = (ChannelSftp) session.openChannel("sftp");
+                    sftpChannel.connect();
 
-                    if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                        List<File> droppedFiles = (List<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
-                        if (!droppedFiles.isEmpty()) {
-                            File file = droppedFiles.get(0);
-                            label.setText("Hochladen: " + file.getName());
-                            uploadFile(file);
+                    publish("Starte Upload: " + localFile.getName());
+
+                    // Progress monitor
+                    SftpProgressMonitor monitor = new SftpProgressMonitor() {
+                        private long transferred = 0;
+
+                        private long total = localFile.length();
+
+                        @Override
+                        public void init(int op, String src, String dest, long max) {
+                            total = max;
+                            SwingUtilities.invokeLater(() -> {
+                                progressBar.setValue(0);
+                                progressBar.setString("0%");
+                            });
                         }
-                    }
 
-                    dtde.dropComplete(true);
+                        @Override
+                        public boolean count(long count) {
+                            transferred += count;
+                            int percent = (int) ((transferred * 100) / total);
+                            SwingUtilities.invokeLater(() -> {
+                                progressBar.setValue(percent);
+                                progressBar.setString(percent + "%");
+                            });
+                            return true;
+                        }
 
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    dtde.dropComplete(false);
+                        @Override
+                        public void end() {
+                            SwingUtilities.invokeLater(() -> {
+                                progressBar.setValue(100);
+                                progressBar.setString("100%");
+                            });
+                        }
+                    };
+
+                    sftpChannel.put(localPath, remotePath, monitor, ChannelSftp.OVERWRITE);
+                    sftpChannel.disconnect();
+
+                    publish("Upload erfolgreich abgeschlossen!");
+
+                } catch (Exception e) {
+                    publish("Fehler beim Upload: " + e.getMessage());
+                    log.error("Upload failed", e);
+                }
+
+                return null;
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                for (String message : chunks) {
+                    logArea.append(message + "\n");
+                    logArea.setCaretPosition(logArea.getDocument().getLength());
                 }
             }
-        });
-    }
+        };
 
-    private void selectAndUploadFile() {
-        JFileChooser fileChooser = new JFileChooser();
-        int returnValue = fileChooser.showOpenDialog(this);
-
-        if (returnValue == JFileChooser.APPROVE_OPTION) {
-            File selectedFile = fileChooser.getSelectedFile();
-            label.setText("Hochladen: " + selectedFile.getName());
-            uploadFile(selectedFile);
-        }
-    }
-
-    private void uploadFile(File file) {
-        Channel channel = null;
-        ChannelSftp sftp = null;
-
-        try {
-            channel = sessionSupplier.get().openChannel("sftp");
-            channel.connect();
-            sftp = (ChannelSftp) channel;
-
-            sftp.cd(remoteDirectory);
-            sftp.put(new FileInputStream(file), file.getName());
-
-            label.setText("Upload erfolgreich: " + file.getName());
-
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            label.setText("Fehler beim Hochladen: " + file.getName());
-
-        } finally {
-            if (sftp != null) {
-                sftp.exit();
-            }
-            if (channel != null) {
-                channel.disconnect();
-            }
-        }
+        worker.execute();
     }
 }
-

@@ -1,127 +1,131 @@
 package de.kneitzel;
 
-import lombok.Getter;
-import lombok.Setter;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.io.*;
-import java.security.Key;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.SecretKeySpec;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
-@Getter
-@Setter
+/**
+ * SSH configuration class for storing all parameters of an SSH connection.
+ * <p>
+ * This class encapsulates all necessary information for an SSH connection
+ * including authentication data, port mappings and configuration options.
+ * Uses Lombok for automatic generation of getters, setters and constructors.
+ *
+ * @author Konrad Neitzel
+ * @version 1.1-SNAPSHOT
+ * @since 1.0
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class SshConfig {
 
+    /**
+     * Unique name of the SSH configuration
+     */
+    private String name;
 
-    private transient String userHome = System.getProperty("user.home");
-    private transient File configFile = new File(userHome, ".sshAutoConnect.json");
+    /**
+     * Hostname or IP address of the SSH server
+     */
+    private String hostname;
 
-    private static final String ALGORITHM = "AES";
-    private static final String SECRET_KEY = "MySuperSecretKey"; // 16-byte Schlüssel
+    /**
+     * SSH port (default: 22)
+     */
+    private int port = 22;
 
-    private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    /**
+     * Username for SSH authentication
+     */
+    private String username;
 
-    private String hostName;
-    private String userName;
+    /**
+     * Path to private SSH key (optional)
+     */
+    private String privateKeyPath;
+
+    /**
+     * Password for SSH authentication (optional, stored encrypted)
+     */
     private String password;
-    private boolean autoConnect;
-    private String xtermCommand;
-    private String uploadDirectory;
-    private List<PortMapping> portMappings;
 
-    public SshConfig() {
+    /**
+     * List of configured port forwardings
+     */
+    private List<PortMapping> portMappings = new ArrayList<>();
+
+    /**
+     * Status flag: true when currently connected
+     */
+    private boolean connected = false;
+
+    /**
+     * Flag: true when should connect automatically at startup
+     */
+    private boolean autoConnect = false;
+
+    /**
+     * Command for opening a terminal (default: "xterm")
+     */
+    private String xtermCommand = "xterm";
+
+    /**
+     * Default directory for file uploads on the remote server
+     */
+    private String uploadDirectory = "/tmp/";
+
+    /**
+     * Constructor for a new SSH configuration with name.
+     * <p>
+     * Creates a new configuration with the specified name and
+     * initializes the port mappings list.
+     *
+     * @param name Unique name of the configuration
+     */
+    public SshConfig(String name) {
+        this.name = name;
         this.portMappings = new ArrayList<>();
     }
 
-    public void init() throws IOException {
-        if (configFile.exists()) {
-            loadFromFile();
-        } else {
-            createExampleConfig();
-            saveToFile();
+    /**
+     * Copy constructor for cloning an SSH configuration.
+     * <p>
+     * Creates a deep copy of an existing configuration,
+     * including all port mappings.
+     *
+     * @param other The SSH configuration to copy
+     */
+    public SshConfig(SshConfig other) {
+        this.name = other.name;
+        this.hostname = other.hostname;
+        this.port = other.port;
+        this.username = other.username;
+        this.privateKeyPath = other.privateKeyPath;
+        this.password = other.password;
+        this.portMappings = new ArrayList<>();
+        for (PortMapping mapping : other.portMappings) {
+            this.portMappings.add(new PortMapping(mapping));
         }
+        this.connected = other.connected;
+        this.autoConnect = other.autoConnect;
+        this.xtermCommand = other.xtermCommand;
+        this.uploadDirectory = other.uploadDirectory;
     }
 
-    public String getPassword() {
-        return password != null ? decrypt(password) : null;
-    }
-
-    public void setPassword(String password) {
-        this.password = password != null ? encrypt(password) : null;
-    }
-
-    public void loadFromFile() throws IOException {
-        if (!configFile.exists()) {
-            createExampleConfig();
-            saveToFile();
-        }
-
-        try (FileReader reader = new FileReader(configFile)) {
-            SshConfig config = gson.fromJson(reader, SshConfig.class);
-            this.hostName = config.hostName;
-            this.userName = config.userName;
-            this.password = config.password;
-            this.autoConnect = config.autoConnect;
-            this.portMappings = config.portMappings;
-            this.uploadDirectory = config.uploadDirectory;
-            if (uploadDirectory == null || uploadDirectory.isEmpty()) {
-                uploadDirectory = "/tmp/";
-            }
-        }
-    }
-
-    // Konfigurationsdatei speichern
-    public void saveToFile() throws IOException {
-        try (FileWriter writer = new FileWriter(configFile)) {
-            gson.toJson(this, writer);
-        }
-    }
-
-    // Beispielkonfiguration erstellen
-    public void createExampleConfig() {
-        setHostName("example.com");
-        setUserName("exampleUser");
-        setPassword("examplePassword");
-        setXtermCommand("xterm");
-        setUploadDirectory("/tmp/");
-        getPortMappings().add(new PortMapping(8080, 8080, "startvnc", "stopvnc"));
-        getPortMappings().add(new PortMapping(8443, 443, "startvnc", "stopvnc"));
-        getPortMappings().add(new PortMapping(3306, 3306, "startvnc", "stopvnc"));
-    }
-
-    // Verschlüsselungsmethoden
-    private static String encrypt(String data) {
-        try {
-            Key key = generateKey();
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, key);
-            byte[] encryptedData = cipher.doFinal(data.getBytes());
-            return Base64.getEncoder().encodeToString(encryptedData);
-        } catch (Exception e) {
-            throw new RuntimeException("Fehler bei der Verschlüsselung", e);
-        }
-    }
-
-    private static String decrypt(String encryptedData) {
-        try {
-            Key key = generateKey();
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, key);
-            byte[] decodedData = Base64.getDecoder().decode(encryptedData);
-            byte[] decryptedData = cipher.doFinal(decodedData);
-            return new String(decryptedData);
-        } catch (Exception e) {
-            throw new RuntimeException("Fehler bei der Entschlüsselung", e);
-        }
-    }
-
-    private static Key generateKey() {
-        return new SecretKeySpec(SECRET_KEY.getBytes(), ALGORITHM);
+    /**
+     * String representation of the SSH configuration.
+     * <p>
+     * Returns the name of the configuration, or if not set,
+     * the hostname, or as fallback "Unnamed Configuration".
+     *
+     * @return String representation of the configuration for UI display
+     */
+    @Override
+    public String toString() {
+        return name != null ? name : (hostname != null ? hostname : "Unnamed Configuration");
     }
 }
