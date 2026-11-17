@@ -14,8 +14,7 @@
         <app.version>${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.incrementalVersion}</app.version>
         <app.vendor>Konrad Neitzel</app.vendor>
         <jpackage.input>${project.build.directory}/jpackage/input</jpackage.input>
-        <jpackage.image.suffix />
-        <jpackage.installer.skip>false</jpackage.installer.skip>
+        <jpackage.skip>false</jpackage.skip>
     </properties>
     <repositories>
         <repository>
@@ -206,232 +205,97 @@
                     </options>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>native-version</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>parse-version</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>clean-runtime-libraries</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <delete dir="${project.build.directory}/lib" />
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>package-desktop-app</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${jpackage.skip}</skip>
+                            <target>
+                                <delete dir="${jpackage.input}" />
+                                <mkdir dir="${jpackage.input}/lib" />
+                                <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${jpackage.input}" />
+                                <copy file="${project.basedir}/LICENSE.md" todir="${jpackage.input}" />
+                                <copy todir="${jpackage.input}/lib">
+                                    <fileset dir="${project.build.directory}/lib" includes="*.jar" />
+                                </copy>
+                                <condition property="jpackage.icon" value="${project.basedir}/src/main/packaging/icons/app.icns">
+                                    <os family="mac" />
+                                </condition>
+                                <condition property="jpackage.icon" value="${project.basedir}/src/main/packaging/icons/app.ico">
+                                    <os family="windows" />
+                                </condition>
+                                <property name="jpackage.icon" value="${project.basedir}/src/main/resources/icon.png" />
+                                <condition property="jpackage.platform.args" value="--mac-package-identifier de.kneitzel.SSHAutoConnect --mac-package-name SSHAutoConnect --mac-app-category utilities" else="">
+                                    <os family="mac" />
+                                </condition>
+                                <condition property="jpackage.executable" value="${java.home}/bin/jpackage.exe" else="${java.home}/bin/jpackage">
+                                    <os family="windows" />
+                                </condition>
+                                <delete dir="${project.build.directory}/dist/image" />
+                                <exec executable="${jpackage.executable}" failonerror="true">
+                                    <arg value="--type" />
+                                    <arg value="app-image" />
+                                    <arg value="--name" />
+                                    <arg value="${app.name}" />
+                                    <arg value="--app-version" />
+                                    <arg value="${app.version}" />
+                                    <arg value="--vendor" />
+                                    <arg value="${app.vendor}" />
+                                    <arg value="--description" />
+                                    <arg value="SSH connections, local forwarding, remote commands and file transfers" />
+                                    <arg value="--input" />
+                                    <arg value="${jpackage.input}" />
+                                    <arg value="--main-jar" />
+                                    <arg value="${project.build.finalName}.jar" />
+                                    <arg value="--main-class" />
+                                    <arg value="de.kneitzel.Launcher" />
+                                    <arg value="--java-options" />
+                                    <arg value="--enable-native-access=ALL-UNNAMED" />
+                                    <arg value="--icon" />
+                                    <arg value="${jpackage.icon}" />
+                                    <arg value="--dest" />
+                                    <arg value="${project.build.directory}/dist/image" />
+                                    <arg line="${jpackage.platform.args}" />
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
-    <profiles>
-        <profile>
-            <id>jpackage</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <version>3.6.1</version>
-                        <executions>
-                            <execution>
-                                <id>native-version</id>
-                                <phase>initialize</phase>
-                                <goals>
-                                    <goal>parse-version</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-antrun-plugin</artifactId>
-                        <version>3.2.0</version>
-                        <executions>
-                            <execution>
-                                <id>clean-package-input</id>
-                                <phase>initialize</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <configuration>
-                                    <target>
-                                        <delete dir="${jpackage.input}" />
-                                        <mkdir dir="${jpackage.input}" />
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>stage-application</id>
-                                <phase>pre-integration-test</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <configuration>
-                                    <target>
-                                        <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${jpackage.input}" />
-                                        <copy file="${project.basedir}/LICENSE.md" todir="${jpackage.input}" />
-                                    </target>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>native-package-runtime</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>copy-dependencies</goal>
-                                </goals>
-                                <configuration>
-                                    <includeScope>runtime</includeScope>
-                                    <outputDirectory>${jpackage.input}/lib</outputDirectory>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.panteleyev</groupId>
-                        <artifactId>jpackage-maven-plugin</artifactId>
-                        <version>1.8.0</version>
-                        <configuration>
-                            <name>${app.name}</name>
-                            <appVersion>${app.version}</appVersion>
-                            <vendor>${app.vendor}</vendor>
-                            <description>SSH connections, local forwarding, remote commands and file transfers</description>
-                            <removeDestination>true</removeDestination>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>app-image</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>jpackage</goal>
-                                </goals>
-                                <configuration>
-                                    <type>APP_IMAGE</type>
-                                    <input>${jpackage.input}</input>
-                                    <destination>${project.build.directory}/dist/image</destination>
-                                    <mainJar>${project.build.finalName}.jar</mainJar>
-                                    <mainClass>de.kneitzel.Launcher</mainClass>
-                                    <javaOptions>
-                                        <option>--enable-native-access=ALL-UNNAMED</option>
-                                    </javaOptions>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>installer</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>jpackage</goal>
-                                </goals>
-                                <configuration>
-                                    <skip>${jpackage.installer.skip}</skip>
-                                    <type>${jpackage.installer.type}</type>
-                                    <appImage>${project.build.directory}/dist/image/${app.name}${jpackage.image.suffix}</appImage>
-                                    <destination>${project.build.directory}/dist/installer</destination>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
-            <id>jpackage-macos</id>
-            <activation>
-                <os>
-                    <family>mac</family>
-                </os>
-            </activation>
-            <properties>
-                <jpackage.installer.type>DMG</jpackage.installer.type>
-                <jpackage.image.suffix>.app</jpackage.image.suffix>
-            </properties>
-            <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>org.panteleyev</groupId>
-                            <artifactId>jpackage-maven-plugin</artifactId>
-                            <executions>
-                                <execution>
-                                    <id>app-image</id>
-                                    <configuration>
-                                        <icon>${project.basedir}/src/main/packaging/icons/app.icns</icon>
-                                        <macPackageIdentifier>de.kneitzel.SSHAutoConnect</macPackageIdentifier>
-                                        <macPackageName>SSHAutoConnect</macPackageName>
-                                        <macAppCategory>utilities</macAppCategory>
-                                    </configuration>
-                                </execution>
-                            </executions>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
-            </build>
-        </profile>
-        <profile>
-            <id>jpackage-windows</id>
-            <activation>
-                <os>
-                    <family>windows</family>
-                </os>
-            </activation>
-            <properties>
-                <jpackage.installer.type>MSI</jpackage.installer.type>
-            </properties>
-            <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>org.panteleyev</groupId>
-                            <artifactId>jpackage-maven-plugin</artifactId>
-                            <executions>
-                                <execution>
-                                    <id>app-image</id>
-                                    <configuration>
-                                        <icon>${project.basedir}/src/main/packaging/icons/app.ico</icon>
-                                    </configuration>
-                                </execution>
-                                <execution>
-                                    <id>installer</id>
-                                    <configuration>
-                                        <winUpgradeUuid>78561a91-077c-4c0e-9862-52fedecbe3c4</winUpgradeUuid>
-                                        <winPerUserInstall>true</winPerUserInstall>
-                                        <winMenu>true</winMenu>
-                                        <winMenuGroup>SSHAutoConnect</winMenuGroup>
-                                        <winShortcut>true</winShortcut>
-                                    </configuration>
-                                </execution>
-                            </executions>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
-            </build>
-        </profile>
-        <profile>
-            <id>jpackage-linux</id>
-            <activation>
-                <os>
-                    <name>Linux</name>
-                </os>
-            </activation>
-            <properties>
-                <jpackage.installer.type>DEB</jpackage.installer.type>
-            </properties>
-            <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>org.panteleyev</groupId>
-                            <artifactId>jpackage-maven-plugin</artifactId>
-                            <executions>
-                                <execution>
-                                    <id>app-image</id>
-                                    <configuration>
-                                        <icon>${project.basedir}/src/main/resources/icon.png</icon>
-                                    </configuration>
-                                </execution>
-                                <execution>
-                                    <id>installer</id>
-                                    <configuration>
-                                        <linuxPackageName>ssh-auto-connect</linuxPackageName>
-                                        <linuxMenuGroup>Utility;Network</linuxMenuGroup>
-                                        <linuxShortcut>true</linuxShortcut>
-                                    </configuration>
-                                </execution>
-                            </executions>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
-            </build>
-        </profile>
-    </profiles>
 </project>
