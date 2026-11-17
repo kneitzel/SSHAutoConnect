@@ -1,0 +1,6 @@
+<?xml version="1.0" ?>
+<?import javafx.scene.layout.VBox?>
+<?import de.kneitzel.ui.SshConfigForm?>
+<VBox xmlns:fx="http://javafx.com/fxml/1">
+    <SshConfigForm/>
+</VBox>
