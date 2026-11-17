@@ -1,0 +1,88 @@
+<?xml version="1.0" ?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import de.neitzel.fx.view.BindingList?>
+<?import de.neitzel.fx.view.DirectBinding?>
+<fx:root xmlns:fx="http://javafx.com/fxml/1" type="javafx.scene.layout.VBox" spacing="8">
+    <fx:define>
+        <BindingList>
+            <DirectBinding control="profileName" property="text" path="profileName" direction="both"/>
+            <DirectBinding control="name" property="text" path="name" direction="both"/>
+            <DirectBinding control="hostname" property="text" path="hostname" direction="both"/>
+            <DirectBinding control="port" property="text" path="port" direction="both"/>
+            <DirectBinding control="username" property="text" path="username" direction="both"/>
+            <DirectBinding control="privateKeyPath" property="text" path="privateKeyPath" direction="both"/>
+            <DirectBinding control="xtermCommand" property="text" path="xtermCommand" direction="both"/>
+            <DirectBinding control="uploadDirectory" property="text" path="uploadDirectory" direction="both"/>
+            <DirectBinding control="autoConnect" property="selected" path="autoConnect" direction="both"/>
+            <DirectBinding control="saveCredentials" property="selected" path="saveCredentials" direction="both"/>
+        </BindingList>
+    </fx:define>
+    <TabPane tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
+        <tabs>
+            <Tab text="Connection">
+                <ScrollPane fitToWidth="true">
+                    <content>
+                        <VBox spacing="6">
+                            <Label text="Profile name"/>
+                            <TextField fx:id="profileName"/>
+                            <Label text="Target name"/>
+                            <TextField fx:id="name"/>
+                            <Label text="Host"/>
+                            <TextField fx:id="hostname"/>
+                            <Label text="SSH port"/>
+                            <TextField fx:id="port"/>
+                            <Label text="Username"/>
+                            <TextField fx:id="username"/>
+                            <Label text="Private key path (optional)"/>
+                            <TextField fx:id="privateKeyPath"/>
+                            <Label text="Terminal executable (Linux)"/>
+                            <TextField fx:id="xtermCommand"/>
+                            <Label text="Default remote upload directory"/>
+                            <TextField fx:id="uploadDirectory"/>
+                            <CheckBox fx:id="autoConnect" text="Connect automatically at startup"/>
+                            <CheckBox fx:id="saveCredentials" text="Save credentials encrypted using the OS credential store"/>
+                            <Label text="Login password"/>
+                            <PasswordField fx:id="password"/>
+                            <Label text="Private-key passphrase"/>
+                            <PasswordField fx:id="passphrase"/>
+                            <Label text="Saved changes apply after reconnecting. Credentials are never passed to external terminals." wrapText="true"/>
+                        </VBox>
+                    </content>
+                </ScrollPane>
+            </Tab>
+            <Tab text="Forwardings">
+                <VBox spacing="6">
+                    <ListView fx:id="mappings" VBox.vgrow="ALWAYS"/>
+                    <HBox spacing="6">
+                        <Button text="Add" onAction="#addMapping"/>
+                        <Button text="Edit / events" onAction="#editMapping"/>
+                        <Button text="Remove" onAction="#removeMapping"/>
+                    </HBox>
+                </VBox>
+            </Tab>
+            <Tab text="Commands">
+                <VBox spacing="6">
+                    <Label text="Every command can run manually. Event assignments are optional." wrapText="true"/>
+                    <ListView fx:id="commands" VBox.vgrow="ALWAYS"/>
+                    <HBox spacing="6">
+                        <Button text="Add" onAction="#addCommand"/>
+                        <Button text="Edit" onAction="#editCommand"/>
+                        <Button text="Remove" onAction="#removeCommand"/>
+                    </HBox>
+                </VBox>
+            </Tab>
+            <Tab text="Session events">
+                <VBox spacing="6">
+                    <ListView fx:id="sessionEvents" VBox.vgrow="ALWAYS"/>
+                    <HBox spacing="6">
+                        <Button text="Assign" onAction="#addSessionEvent"/>
+                        <Button text="Remove" onAction="#removeSessionEvent"/>
+                        <Button text="Up" onAction="#sessionUp"/>
+                        <Button text="Down" onAction="#sessionDown"/>
+                    </HBox>
+                </VBox>
+            </Tab>
+        </tabs>
+    </TabPane>
+</fx:root>
