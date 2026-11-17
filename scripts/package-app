@@ -2,13 +2,18 @@
 set -euo pipefail
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_root"
-if [[ "${1:-}" != --skip-build ]]; then ./mvnw -B -ntp verify; fi
-package_input="$(mktemp -d "$project_root/target/package-input.XXXXXX")"
-trap 'rm -rf -- "$package_input"' EXIT
-cp target/SshAutoConnect-1.1-SNAPSHOT.jar "$package_input/"
-cp -R target/lib "$package_input/lib"
-package_tool="${JAVA_HOME:+$JAVA_HOME/bin/}jpackage"
-"$package_tool" --type app-image --name SSHAutoConnect --app-version 1.1.0 \
- --input "$package_input" --main-jar SshAutoConnect-1.1-SNAPSHOT.jar \
- --main-class de.kneitzel.Launcher --dest target/dist \
- --java-options '--enable-native-access=ALL-UNNAMED'
+maven_options=(-B -ntp -Pjpackage)
+while (($#)); do
+    case "$1" in
+        --skip-tests|--skip-build) maven_options+=(-DskipTests) ;;
+        --image-only) maven_options+=(-Djpackage.installer.skip=true) ;;
+        --help|-h)
+            echo 'Usage: scripts/package-app [--skip-tests] [--image-only] [Maven options]'
+            echo 'Builds a bundled application and native installer using the jpackage Maven profile.'
+            echo '--skip-build is retained as an alias for --skip-tests; Maven still stages the current application.'
+            exit 0 ;;
+        *) maven_options+=("$1") ;;
+    esac
+    shift
+done
+exec ./mvnw "${maven_options[@]}" verify

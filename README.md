@@ -116,20 +116,56 @@ tray or required startup interaction keeps the application accessible. Open/Quit
 are available in the tray, and Quit is also in the JavaFX window. Native macOS Quit
 uses the same unsaved-edit and cleanup path.
 
-Build a jpackage app image on the target platform:
+Build the full application and its native installer on the target platform:
 
 ```sh
+./mvnw -Pjpackage verify
+# Equivalent convenience entry point:
 ./scripts/package-app
-# After an existing successful Maven verification:
-./scripts/package-app --skip-build
 ```
 
-On Windows use `./scripts/package-app.ps1` (optionally `-SkipBuild`). Images are
-created under `target/dist`; move/remove an earlier generated image before
-repackaging. jpackage includes the runtime and dependencies. The shaded executable
-JAR and Graal native profiles have been retired. Linux external terminals use the
-configured executable (default `xterm`); Windows uses `wt.exe`; macOS uses Terminal.
+The application contains its own Java runtime and dependencies; end users do not
+need to install Java. Maven stages only runtime dependencies and the current JAR
+in `target/jpackage/input`, builds the app image, then packages that same image
+into an installer. Native application versions are derived from the Maven version
+(`1.1-SNAPSHOT` becomes `1.1.0`); override with `-Dapp.version=1.2.3` when needed.
+
+| Build platform | Launchable application | Native installer |
+| --- | --- | --- |
+| macOS | `target/dist/image/SSHAutoConnect.app` | `target/dist/installer/SSHAutoConnect-1.1.0.dmg` |
+| Windows | `target/dist/image/SSHAutoConnect/SSHAutoConnect.exe` | MSI under `target/dist/installer` |
+| Linux | `target/dist/image/SSHAutoConnect/bin/SSHAutoConnect` | DEB under `target/dist/installer` |
+
+On macOS, open the DMG and drag SSHAutoConnect into Applications, or launch the
+`.app` directly. Native installers must be built on their target OS. Windows MSI
+builds need the WiX tools required by the selected JDK; Linux DEB builds need
+`dpkg-deb` and `fakeroot`. To build only a portable app image without installer
+prerequisites:
+
+```sh
+./mvnw -Pjpackage -Djpackage.installer.skip=true verify
+# Or:
+./scripts/package-app --image-only
+```
+
+For incremental builds after a successful verification, `--skip-tests` skips
+running tests while Maven still compiles/stages the current application. The old
+`--skip-build` flag is retained as an alias. On Windows use
+`./scripts/package-app.ps1`, optionally with `-SkipTests` (alias `-SkipBuild`) and
+`-ImageOnly`. Additional Maven options are forwarded by both wrappers.
+
+Rebuilding refreshes the packaging input and dedicated `target/dist/image` and
+`target/dist/installer` output directories, so repeated builds work without
+`clean`. The app has an explicit macOS bundle identifier
+`de.kneitzel.SSHAutoConnect`, platform icons using the existing artwork, version
+metadata and a bundled license. Windows installers have a stable upgrade UUID,
+per-user installation and Start Menu/desktop shortcuts. These local artifacts
+are not Developer ID signed or notarized.
+
+The shaded executable JAR and Graal native profiles have been retired. Linux
+external terminals use the configured executable (default `xterm`); Windows uses
+`wt.exe`; macOS uses Terminal.
 
 Implementation evidence and remaining platform qualification are recorded in the
-workspace's approved SSHAutoConnect effort. Windows/Linux native packaging, tray,
-terminal and key-store behavior require validation on those platforms.
+workspace's SSHAutoConnect efforts. Windows/Linux native packaging, tray, terminal
+and key-store behavior require validation on those platforms.
