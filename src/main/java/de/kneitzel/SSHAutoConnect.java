@@ -11,6 +11,7 @@ import javafx.application.*;
 import javafx.collections.*;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.*;
@@ -105,6 +106,7 @@ public class SSHAutoConnect extends Application {
         command.setPrefWidth(260);
         command.setPromptText("Select a command");
         stage.setTitle("SSH Auto Connect");
+        stage.getIcons().add(new Image(SSHAutoConnect.class.getResource("/icon.png").toExternalForm()));
         details.setEditable(false);
         details.setWrapText(true);
         profiles.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> refresh());

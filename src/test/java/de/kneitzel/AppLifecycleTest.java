@@ -48,15 +48,15 @@ class AppLifecycleTest {
         repo.save(config);
         TraySupport.Backend backend =
                 (image, label, open, quit) -> CompletableFuture.completedFuture(null);
-        app =
-                new SSHAutoConnect(
-                        repo,
-                        new CredentialProtection(new CredentialProtectionTest.Store()),
-                        temp.resolve("no-legacy"),
-                        (t, c) -> new CoordinatorTest.Fake(),
-                        backend);
         Fx.call(
                 () -> {
+                    app =
+                            new SSHAutoConnect(
+                                    repo,
+                                    new CredentialProtection(new CredentialProtectionTest.Store()),
+                                    temp.resolve("no-legacy"),
+                                    (t, c) -> new CoordinatorTest.Fake(),
+                                    backend);
                     stage = new Stage();
                     app.start(stage);
                     return null;
